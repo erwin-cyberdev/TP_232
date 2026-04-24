@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}Historique — Internet Quality Analyzer{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <h1>📋 Historique des Soumissions</h1>
+    <p>Consultez et filtrez l'ensemble des données collectées.</p>
+</section>
+
+<!-- Filters -->
+<div class="filters-bar">
+    <div class="filter-group">
+        <label for="hist-operator">Opérateur</label>
+        <select id="hist-operator">
+            <option value="">Tous</option>
+        </select>
+    </div>
+    <div class="filter-group">
+        <label for="hist-city">Ville</label>
+        <select id="hist-city">
+            <option value="">Toutes</option>
+        </select>
+    </div>
+    <div class="filter-group">
+        <label for="hist-quality">Qualité</label>
+        <select id="hist-quality">
+            <option value="">Toutes</option>
+            <option value="lent">🐢 Lent</option>
+            <option value="moyen">🚶 Moyen</option>
+            <option value="rapide">🚀 Rapide</option>
+        </select>
+    </div>
+    <button class="btn btn-secondary" id="hist-reset">Réinitialiser</button>
+</div>
+
+<!-- Summary bar -->
+<div class="history-summary">
+    <span id="hist-count">0 résultats</span>
+    <span class="history-page-info" id="hist-page-info"></span>
+</div>
+
+<!-- Table -->
+<div class="card table-card">
+    <div class="table-wrapper">
+        <table class="data-table" id="hist-table">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Opérateur</th>
+                    <th>Qualité</th>
+                    <th>Ville</th>
+                    <th>Quartier</th>
+                    <th>Vitesse (Mbps)</th>
+                    <th>Date</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="hist-tbody">
+            </tbody>
+        </table>
+    </div>
+    <div id="hist-empty" class="table-empty" style="display:none;">
+        <span class="empty-icon">📭</span>
+        <p>Aucune donnée trouvée</p>
+    </div>
+</div>
+
+<!-- Pagination -->
+<div class="pagination" id="hist-pagination"></div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/history.js"></script>
+{% endblock %}

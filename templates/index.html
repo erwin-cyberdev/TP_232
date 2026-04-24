@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+
+{% block title %}Soumettre — Internet Quality Analyzer{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <h1>🌐 Évaluez votre connexion Internet</h1>
+    <p>Aidez-nous à cartographier la qualité d'internet au Cameroun en partageant votre expérience.</p>
+</section>
+
+<div class="form-container">
+    <div class="card form-card">
+        <h2>📋 Nouvelle soumission</h2>
+
+        <div id="alert-success" class="alert alert-success" style="display:none;">
+            ✅ Soumission envoyée avec succès ! Merci pour votre contribution.
+        </div>
+        <div id="alert-error" class="alert alert-error" style="display:none;">
+            ❌ <span id="error-message">Erreur lors de l'envoi.</span>
+        </div>
+
+        <form id="submission-form">
+            <div class="form-group">
+                <label for="operator">Opérateur *</label>
+                <select id="operator" name="operator" required>
+                    <option value="">— Sélectionnez —</option>
+                    <option value="MTN">MTN</option>
+                    <option value="Orange">Orange</option>
+                    <option value="Camtel">Camtel</option>
+                    <option value="Nexttel">Nexttel</option>
+                    <option value="Yoomee">Yoomee</option>
+                    <option value="Autre">Autre</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Qualité perçue *</label>
+                <div class="radio-group">
+                    <label class="radio-card" for="q-lent">
+                        <input type="radio" id="q-lent" name="quality" value="lent" required>
+                        <div class="radio-content">
+                            <span class="radio-emoji">🐢</span>
+                            <span class="radio-label">Lent</span>
+                        </div>
+                    </label>
+                    <label class="radio-card" for="q-moyen">
+                        <input type="radio" id="q-moyen" name="quality" value="moyen">
+                        <div class="radio-content">
+                            <span class="radio-emoji">🚶</span>
+                            <span class="radio-label">Moyen</span>
+                        </div>
+                    </label>
+                    <label class="radio-card" for="q-rapide">
+                        <input type="radio" id="q-rapide" name="quality" value="rapide">
+                        <div class="radio-content">
+                            <span class="radio-emoji">🚀</span>
+                            <span class="radio-label">Rapide</span>
+                        </div>
+                    </label>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="city">Ville *</label>
+                    <input type="text" id="city" name="city" placeholder="Ex: Douala" required>
+                </div>
+                <div class="form-group">
+                    <label for="neighborhood">Quartier</label>
+                    <input type="text" id="neighborhood" name="neighborhood" placeholder="Ex: Bonanjo">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="speed_mbps">Vitesse mesurée (Mbps) — optionnel</label>
+                <input type="number" id="speed_mbps" name="speed_mbps" step="0.1" min="0" max="1000" placeholder="Ex: 12.5">
+            </div>
+
+            <button type="submit" class="btn btn-primary" id="submit-btn">
+                <span class="btn-text">Envoyer la soumission</span>
+                <span class="btn-loading" style="display:none;">Envoi en cours...</span>
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('submission-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    const btn = document.getElementById('submit-btn');
+    const btnText = btn.querySelector('.btn-text');
+    const btnLoading = btn.querySelector('.btn-loading');
+    const alertSuccess = document.getElementById('alert-success');
+    const alertError = document.getElementById('alert-error');
+
+    // Reset alerts
+    alertSuccess.style.display = 'none';
+    alertError.style.display = 'none';
+
+    // Loading state
+    btn.disabled = true;
+    btnText.style.display = 'none';
+    btnLoading.style.display = 'inline';
+
+    const formData = {
+        operator: document.getElementById('operator').value,
+        quality: document.querySelector('input[name="quality"]:checked')?.value,
+        city: document.getElementById('city').value,
+        neighborhood: document.getElementById('neighborhood').value,
+        speed_mbps: document.getElementById('speed_mbps').value || null
+    };
+
+    try {
+        const res = await fetch('/api/submissions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(formData)
+        });
+
+        const data = await res.json();
+
+        if (res.ok) {
+            alertSuccess.style.display = 'block';
+            this.reset();
+            // Scroll to alert
+            alertSuccess.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        } else {
+            document.getElementById('error-message').textContent = data.error || 'Erreur inconnue';
+            alertError.style.display = 'block';
+        }
+    } catch (err) {
+        document.getElementById('error-message').textContent = 'Impossible de joindre le serveur.';
+        alertError.style.display = 'block';
+    } finally {
+        btn.disabled = false;
+        btnText.style.display = 'inline';
+        btnLoading.style.display = 'none';
+    }
+});
+</script>
+{% endblock %}

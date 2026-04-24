@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block title %}Classement — Internet Quality Analyzer{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <h1>🏆 Classement des Opérateurs</h1>
+    <p>Comparez les performances des opérateurs internet au Cameroun.</p>
+</section>
+
+<div class="ranking-container" id="ranking-container">
+    <!-- Cards will be injected by JS -->
+</div>
+
+<div id="ranking-empty" class="empty-state" style="display:none;">
+    <div class="empty-icon">📭</div>
+    <h3>Aucune donnée disponible</h3>
+    <p>Commencez par <a href="/">soumettre une évaluation</a> pour voir le classement.</p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/ranking.js"></script>
+{% endblock %}

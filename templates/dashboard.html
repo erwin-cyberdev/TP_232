@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard — Internet Quality Analyzer{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <h1>📊 Dashboard — Analyse de la Qualité Internet</h1>
+    <p>Visualisez les données collectées par opérateur et par zone géographique.</p>
+</section>
+
+<!-- Filters -->
+<div class="filters-bar">
+    <div class="filter-group">
+        <label for="filter-operator">Opérateur</label>
+        <select id="filter-operator">
+            <option value="">Tous</option>
+        </select>
+    </div>
+    <div class="filter-group">
+        <label for="filter-city">Ville</label>
+        <select id="filter-city">
+            <option value="">Toutes</option>
+        </select>
+    </div>
+    <button class="btn btn-secondary" id="btn-reset-filters">Réinitialiser</button>
+</div>
+
+<!-- KPI Cards -->
+<div class="kpi-grid">
+    <div class="card kpi-card">
+        <div class="kpi-icon">📩</div>
+        <div class="kpi-value" id="kpi-total">0</div>
+        <div class="kpi-label">Soumissions</div>
+    </div>
+    <div class="card kpi-card">
+        <div class="kpi-icon">📶</div>
+        <div class="kpi-value" id="kpi-operators">0</div>
+        <div class="kpi-label">Opérateurs</div>
+    </div>
+    <div class="card kpi-card">
+        <div class="kpi-icon">🏙️</div>
+        <div class="kpi-value" id="kpi-cities">0</div>
+        <div class="kpi-label">Villes</div>
+    </div>
+    <div class="card kpi-card">
+        <div class="kpi-icon">⚡</div>
+        <div class="kpi-value" id="kpi-avg-speed">—</div>
+        <div class="kpi-label">Vitesse moy. (Mbps)</div>
+    </div>
+</div>
+
+<!-- Charts -->
+<div class="charts-grid">
+    <div class="card chart-card">
+        <h3>Qualité moyenne par opérateur</h3>
+        <p class="chart-subtitle">Échelle : 1 = Lent, 2 = Moyen, 3 = Rapide</p>
+        <canvas id="chart-quality"></canvas>
+    </div>
+    <div class="card chart-card">
+        <h3>Distribution des qualités</h3>
+        <p class="chart-subtitle">Répartition en pourcentage</p>
+        <canvas id="chart-distribution"></canvas>
+    </div>
+    <div class="card chart-card chart-card-wide">
+        <h3>Soumissions par ville</h3>
+        <p class="chart-subtitle">Nombre de soumissions par zone géographique</p>
+        <canvas id="chart-zones"></canvas>
+    </div>
+    <div class="card chart-card">
+        <h3>Vitesse moyenne par opérateur</h3>
+        <p class="chart-subtitle">En Mbps (données optionnelles)</p>
+        <canvas id="chart-speed"></canvas>
+    </div>
+</div>
+
+<!-- Empty state -->
+<div id="empty-state" class="empty-state" style="display:none;">
+    <div class="empty-icon">📭</div>
+    <h3>Aucune donnée disponible</h3>
+    <p>Commencez par <a href="/">soumettre une évaluation</a> pour voir les statistiques apparaître ici.</p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/dashboard.js"></script>
+{% endblock %}

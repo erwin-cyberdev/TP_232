@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+
+{% block title %}Speed Test — Internet Quality Analyzer{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <h1>⚡ Test de Vitesse Internet</h1>
+    <p>Mesurez votre débit download, upload et votre latence en temps réel.</p>
+</section>
+
+<div class="speedtest-container">
+    <!-- Gauges -->
+    <div class="gauges-grid">
+        <div class="card gauge-card">
+            <div class="gauge-wrapper">
+                <svg class="gauge-svg" viewBox="0 0 200 130">
+                    <path class="gauge-bg" d="M 20 120 A 80 80 0 0 1 180 120" fill="none" stroke-width="14" stroke-linecap="round"/>
+                    <path class="gauge-fill gauge-download" id="gauge-download-fill" d="M 20 120 A 80 80 0 0 1 180 120" fill="none" stroke-width="14" stroke-linecap="round" stroke-dasharray="251" stroke-dashoffset="251"/>
+                </svg>
+                <div class="gauge-value" id="gauge-download-value">—</div>
+            </div>
+            <div class="gauge-label">Download</div>
+            <div class="gauge-unit">Mbps</div>
+        </div>
+
+        <div class="card gauge-card gauge-card-center">
+            <div class="gauge-wrapper">
+                <svg class="gauge-svg" viewBox="0 0 200 130">
+                    <path class="gauge-bg" d="M 20 120 A 80 80 0 0 1 180 120" fill="none" stroke-width="14" stroke-linecap="round"/>
+                    <path class="gauge-fill gauge-upload" id="gauge-upload-fill" d="M 20 120 A 80 80 0 0 1 180 120" fill="none" stroke-width="14" stroke-linecap="round" stroke-dasharray="251" stroke-dashoffset="251"/>
+                </svg>
+                <div class="gauge-value" id="gauge-upload-value">—</div>
+            </div>
+            <div class="gauge-label">Upload</div>
+            <div class="gauge-unit">Mbps</div>
+        </div>
+
+        <div class="card gauge-card">
+            <div class="gauge-wrapper">
+                <svg class="gauge-svg" viewBox="0 0 200 130">
+                    <path class="gauge-bg" d="M 20 120 A 80 80 0 0 1 180 120" fill="none" stroke-width="14" stroke-linecap="round"/>
+                    <path class="gauge-fill gauge-ping" id="gauge-ping-fill" d="M 20 120 A 80 80 0 0 1 180 120" fill="none" stroke-width="14" stroke-linecap="round" stroke-dasharray="251" stroke-dashoffset="251"/>
+                </svg>
+                <div class="gauge-value" id="gauge-ping-value">—</div>
+            </div>
+            <div class="gauge-label">Ping</div>
+            <div class="gauge-unit">ms</div>
+        </div>
+    </div>
+
+    <!-- Status -->
+    <div class="speedtest-status" id="speedtest-status">
+        Cliquez sur le bouton pour lancer le test
+    </div>
+
+    <!-- Progress bar -->
+    <div class="progress-container" id="progress-container" style="display:none;">
+        <div class="progress-bar">
+            <div class="progress-fill" id="progress-fill"></div>
+        </div>
+        <div class="progress-label" id="progress-label">0%</div>
+    </div>
+
+    <!-- Start button -->
+    <button class="btn btn-start" id="btn-start-test">
+        <span class="btn-icon">▶</span>
+        <span>Lancer le Speed Test</span>
+    </button>
+
+    <!-- Results & Save -->
+    <div class="speedtest-results" id="speedtest-results" style="display:none;">
+        <div class="card results-card">
+            <h3>💾 Sauvegarder ce résultat</h3>
+            <p class="results-summary" id="results-summary"></p>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="st-operator">Opérateur</label>
+                    <select id="st-operator">
+                        <option value="">— Sélectionnez —</option>
+                        <option value="MTN">MTN</option>
+                        <option value="Orange">Orange</option>
+                        <option value="Camtel">Camtel</option>
+                        <option value="Nexttel">Nexttel</option>
+                        <option value="Yoomee">Yoomee</option>
+                        <option value="Autre">Autre</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="st-city">Ville</label>
+                    <input type="text" id="st-city" placeholder="Ex: Douala">
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="st-neighborhood">Quartier (optionnel)</label>
+                <input type="text" id="st-neighborhood" placeholder="Ex: Bonanjo">
+            </div>
+            <button class="btn btn-primary" id="btn-save-result">Sauvegarder la soumission</button>
+            <div id="save-alert" class="alert alert-success" style="display:none;">
+                ✅ Résultat sauvegardé avec succès !
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/speedtest.js"></script>
+{% endblock %}
