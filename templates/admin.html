@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+
+{% block title %}Admin — Internet Quality Analyzer{% endblock %}
+
+{% block content %}
+<div class="container admin-container">
+    <header class="page-header">
+        <h1>⚙️ Administration</h1>
+        <p>Gérez les données et les soumissions de l'application.</p>
+    </header>
+
+    <div class="admin-actions">
+        <div class="card action-card">
+            <h3>Nettoyage de la base</h3>
+            <p>Attention : Cette action est irréversible et supprimera toutes les soumissions enregistrées.</p>
+            <button id="btn-clear-db" class="btn btn-danger">
+                <span class="btn-icon">🗑️</span> Tout effacer
+            </button>
+        </div>
+    </div>
+
+    <div class="card table-card">
+        <h3>Historique des soumissions</h3>
+        <div id="admin-status" class="status-msg">Chargement des données...</div>
+        <div class="table-responsive">
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Opérateur</th>
+                        <th>Ville</th>
+                        <th>Vitesse (Mbps)</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="admin-submissions-body">
+                    <!-- Data will be injected here -->
+                </tbody>
+            </table>
+        </div>
+        <div id="pagination" class="pagination-controls"></div>
+    </div>
+</div>
+
+<style>
+.admin-container {
+    padding: 2rem 0;
+}
+.admin-actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 2rem;
+    margin-bottom: 2rem;
+}
+.action-card {
+    border-left: 4px solid var(--danger);
+}
+.btn-danger {
+    background: linear-gradient(135deg, #ff4d4d, #cc0000);
+    color: white;
+}
+.btn-danger:hover {
+    box-shadow: 0 0 15px rgba(255, 77, 77, 0.4);
+    transform: translateY(-2px);
+}
+.admin-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+}
+.admin-table th, .admin-table td {
+    padding: 1rem;
+    text-align: left;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.admin-table tr:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+.btn-sm-danger {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
+    background: rgba(255, 77, 77, 0.1);
+    color: #ff4d4d;
+    border: 1px solid #ff4d4d;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+.btn-sm-danger:hover {
+    background: #ff4d4d;
+    color: white;
+}
+.status-msg {
+    margin: 1rem 0;
+    padding: 1rem;
+    border-radius: 8px;
+    display: none;
+}
+.status-msg.error {
+    display: block;
+    background: rgba(255, 77, 77, 0.1);
+    color: #ff4d4d;
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentPage = 1;
+
+async function loadSubmissions(page = 1) {
+    const status = document.getElementById('admin-status');
+    const tbody = document.getElementById('admin-submissions-body');
+    
+    try {
+        const res = await fetch(`/api/submissions?page=${page}&per_page=20`);
+        const result = await res.json();
+        
+        if (result.data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Aucune donnée disponible.</td></tr>';
+            status.style.display = 'none';
+            return;
+        }
+
+        tbody.innerHTML = result.data.map(s => `
+            <tr>
+                <td>${new Date(s.created_at).toLocaleString()}</td>
+                <td><span class="badge">${s.operator}</span></td>
+                <td>${s.city}</td>
+                <td><strong>${s.speed_mbps || '—'}</strong></td>
+                <td>
+                    <button class="btn-sm-danger" onclick="deleteSubmission(${s.id})">Supprimer</button>
+                </td>
+            </tr>
+        `).join('');
+        
+        status.style.display = 'none';
+        renderPagination(result.pagination);
+    } catch (err) {
+        status.textContent = "Erreur lors du chargement des données.";
+        status.classList.add('error');
+    }
+}
+
+function renderPagination(p) {
+    const ctrl = document.getElementById('pagination');
+    if (p.pages <= 1) {
+        ctrl.innerHTML = '';
+        return;
+    }
+
+    let html = `<div class="pagination">`;
+    for (let i = 1; i <= p.pages; i++) {
+        html += `<button class="page-btn ${i === p.page ? 'active' : ''}" onclick="loadSubmissions(${i})">${i}</button>`;
+    }
+    html += `</div>`;
+    ctrl.innerHTML = html;
+}
+
+async function deleteSubmission(id) {
+    if (!confirm("Supprimer cette soumission ?")) return;
+
+    try {
+        const res = await fetch(`/api/submissions/${id}`, { method: 'DELETE' });
+        if (res.ok) {
+            loadSubmissions(currentPage);
+        } else {
+            alert("Erreur lors de la suppression.");
+        }
+    } catch (err) {
+        alert("Erreur réseau.");
+    }
+}
+
+async function clearDatabase() {
+    const code = prompt("TAPEZ 'EFFACER' POUR CONFIRMER LA SUPPRESSION TOTALE :");
+    if (code !== 'EFFACER') return;
+
+    try {
+        const res = await fetch('/api/admin/clear', { method: 'POST' });
+        const data = await res.json();
+        if (res.ok) {
+            alert(data.message);
+            loadSubmissions(1);
+        } else {
+            alert("Erreur : " + data.error);
+        }
+    } catch (err) {
+        alert("Erreur réseau.");
+    }
+}
+
+document.getElementById('btn-clear-db').addEventListener('click', clearDatabase);
+
+// Initial load
+document.addEventListener('DOMContentLoaded', () => loadSubmissions(1));
+</script>
+{% endblock %}

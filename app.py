@@ -412,5 +412,25 @@ def get_ranking():
     return jsonify(ranking)
 
 
+# ────────────────────────── admin ─────────────────────────────
+
+@app.route('/admin')
+def admin():
+    """Page d'administration pour gérer les données."""
+    return render_template('admin.html')
+
+
+@app.route('/api/admin/clear', methods=['POST'])
+def clear_db():
+    """Supprimer toutes les soumissions (Action Admin)."""
+    try:
+        num_deleted = db.session.query(Submission).delete()
+        db.session.commit()
+        return jsonify({'message': f'{num_deleted} soumissions supprimées.'}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
