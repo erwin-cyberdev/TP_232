@@ -78,14 +78,14 @@ function runSpeedTest() {
             fill.style.width = prog + '%';
             lbl.textContent = 'Download... ' + Math.round(data.progress * 100) + '%';
             setStatus('⬇️ Download... ' + data.value.toFixed(2) + ' Mbps');
-            setGauge('download', data.value, 100);
+            setGauge('download', data.value, 1000);
             document.getElementById(`gauge-download-fill`).style.transition = 'stroke-dashoffset 0.3s ease-out';
         } else if (data.step === 'upload') {
             const prog = 60 + (data.progress * 40);
             fill.style.width = prog + '%';
             lbl.textContent = 'Upload... ' + Math.round(data.progress * 100) + '%';
             setStatus('⬆️ Upload... ' + data.value.toFixed(2) + ' Mbps');
-            setGauge('upload', data.value, 50);
+            setGauge('upload', data.value, 1000);
             document.getElementById(`gauge-upload-fill`).style.transition = 'stroke-dashoffset 0.3s ease-out';
         } else if (data.step === 'done') {
             fill.style.width = '100%';
@@ -100,6 +100,30 @@ function runSpeedTest() {
             const resultsDiv = document.getElementById('speedtest-results');
             const summary = document.getElementById('results-summary');
             summary.textContent = `Dl: ${testResults.download} Mbps | Ul: ${testResults.upload} Mbps | Ping: ${testResults.ping} ms`;
+            
+            // Auto-fill speed field
+            const speedInput = document.getElementById('st-speed');
+            if (speedInput) speedInput.value = testResults.download;
+
+            const uploadInput = document.getElementById('st-upload');
+            if (uploadInput) uploadInput.value = testResults.upload;
+
+            const pingInput = document.getElementById('st-ping');
+            if (pingInput) pingInput.value = testResults.ping;
+
+            const stOperator = document.getElementById('st-operator');
+            const stOperatorCustom = document.getElementById('st-operator-custom');
+
+            stOperator?.addEventListener('change', () => {
+                if (stOperator.value === 'Autre') {
+                    stOperatorCustom.style.display = 'block';
+                    stOperatorCustom.required = true;
+                } else {
+                    stOperatorCustom.style.display = 'none';
+                    stOperatorCustom.required = false;
+                }
+            });
+
             resultsDiv.style.display = 'block';
             resultsDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
             
@@ -108,7 +132,6 @@ function runSpeedTest() {
             isRunning = false;
             btn.disabled = false;
             btn.innerHTML = '<span class="btn-icon">▶</span><span>Relancer le Speed Test</span>';
-            setTimeout(() => { document.getElementById('progress-container').style.display = 'none'; }, 2000);
         } else if (data.step === 'error') {
             resetGauges();
             setStatus('❌ Erreur : ' + data.message);
@@ -135,18 +158,21 @@ function runSpeedTest() {
 
 // ── Save result ──
 async function saveResult() {
-    const operator = document.getElementById('st-operator').value;
+    let operator = document.getElementById('st-operator').value;
+    if (operator === 'Autre') {
+        operator = document.getElementById('st-operator-custom').value.trim();
+    }
     const city = document.getElementById('st-city').value;
     const neighborhood = document.getElementById('st-neighborhood').value;
 
     if (!operator || !city) {
-        alert("Veuillez remplir l'opérateur et la ville.");
+        alert("Veuillez sélectionner ou saisir votre opérateur et remplir la ville.");
         return;
     }
 
     let quality = 'lent';
     if (testResults.download >= 10) quality = 'rapide';
-    else if (testResults.download >= 3) quality = 'moyen';
+    else if (testResults.download >= 2) quality = 'moyen';
 
     try {
         const res = await fetch('/api/submissions', {
@@ -157,7 +183,9 @@ async function saveResult() {
                 quality,
                 city,
                 neighborhood,
-                speed_mbps: testResults.download
+                speed_mbps: testResults.download,
+                upload_mbps: testResults.upload,
+                ping_ms: testResults.ping
             })
         });
 
@@ -173,3 +201,9 @@ async function saveResult() {
 // ── Events ──
 document.getElementById('btn-start-test').addEventListener('click', runSpeedTest);
 document.getElementById('btn-save-result').addEventListener('click', saveResult);
+
+// Auto-start on load
+document.addEventListener('DOMContentLoaded', () => {
+    // Small delay to ensure everything is ready and smooth
+    setTimeout(runSpeedTest, 1000);
+});

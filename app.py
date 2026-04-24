@@ -1,14 +1,15 @@
 import os
 import time
-import random
 import json
 import threading
 import queue
-import concurrent.futures
-import requests
+import speedtest
 from flask import Flask, render_template, request, jsonify, Response, stream_with_context
 from models import db, Submission
 from sqlalchemy import func
+
+
+
 
 app = Flask(__name__)
 
@@ -30,13 +31,7 @@ with app.app_context():
 
 @app.route('/')
 def index():
-    """Page formulaire de soumission."""
-    return render_template('index.html')
-
-
-@app.route('/speedtest')
-def speedtest():
-    """Page test de vitesse internet."""
+    """Page principale avec speedtest intégré."""
     return render_template('speedtest.html')
 
 
@@ -60,149 +55,73 @@ def ranking():
 
 # ──────────────────────── Speed Test API ──────────────────────────
 
-SERVERS = [
-    {
-        "name": "Localhost Serveur (Fiable)",
-        "ping": "http://127.0.0.1:5000/mock/ping",
-        "dl": "http://127.0.0.1:5000/mock/download",
-        "ul": "http://127.0.0.1:5000/mock/upload"
-    },
-    {
-        "name": "Tele2 Frankfurt",
-        "ping": "http://fra.speedtest.tele2.net/1MB.zip",
-        "dl": "http://fra.speedtest.tele2.net/100MB.zip",
-        "ul": "http://fra.speedtest.tele2.net/upload.php"
-    },
-    {
-        "name": "Tele2 Amsterdam",
-        "ping": "http://ams.speedtest.tele2.net/1MB.zip",
-        "dl": "http://ams.speedtest.tele2.net/100MB.zip",
-        "ul": "http://ams.speedtest.tele2.net/upload.php"
-    }
-]
+
 
 def speedtest_engine(q):
     try:
-        # 1. Sélection du serveur
-        q.put({"step": "init", "message": "Sélection du serveur..."})
-        best_server = None
-        best_latency = float('inf')
+        # 1. Initialisation
+        q.put({"step": "init", "message": "Initialisation du moteur Speedtest-cli..."})
+        st = speedtest.Speedtest()
         
-        for s in SERVERS:
-            try:
-                start = time.time()
-                requests.get(s["ping"], timeout=2, stream=True).close()
-                latency = (time.time() - start) * 1000
-                if latency < best_latency:
-                    best_latency = latency
-                    best_server = s
-            except Exception:
-                pass
-                
-        if not best_server:
-            best_server = SERVERS[0]
-            
-        q.put({"step": "init", "message": f"Serveur sélectionné: {best_server['name']}"})
-        time.sleep(0.5)
+        # 2. Recherche du meilleur serveur
+        q.put({"step": "init", "message": "Recherche du meilleur serveur..."})
+        st.get_best_server()
+        best_server = st.best
+        server_name = f"{best_server['sponsor']} ({best_server['name']})"
         
-        # 2. Ping
-        q.put({"step": "ping", "value": 0, "server_name": best_server['name']})
-        latencies = []
-        for _ in range(5):
-            try:
-                start = time.time()
-                r = requests.get(best_server["ping"], stream=True, timeout=2)
-                latencies.append((time.time() - start) * 1000)
-                r.close()
-            except:
-                pass
-        avg_ping = sum(latencies)/len(latencies) if latencies else 0
-        q.put({"step": "ping", "value": round(avg_ping, 1), "server_name": best_server['name']})
-        time.sleep(0.5)
-        
+        q.put({
+            "step": "ping", 
+            "value": round(best_server['latency'], 1), 
+            "jitter": 0, # speedtest-cli doesn't provide jitter natively in results
+            "server_name": server_name
+        })
+        time.sleep(1)
+
         # 3. Download
-        duration = 8.0
-        start_time = time.time()
-        downloaded_bytes = 0
-        is_testing = True
+        q.put({"step": "download", "value": 0, "progress": 0})
         
-        def download_worker():
-            nonlocal downloaded_bytes, is_testing
-            while is_testing and (time.time() - start_time) < duration:
-                try:
-                    with requests.get(best_server["dl"], stream=True, timeout=5) as r:
-                        for chunk in r.iter_content(chunk_size=65536):
-                            if not is_testing or (time.time() - start_time) > duration:
-                                break
-                            if chunk:
-                                downloaded_bytes += len(chunk)
-                except:
-                    pass
+        # Counter for progress
+        download_finished = [0]
+        def dl_callback(i, total, start=False, end=False):
+            if end:
+                download_finished[0] += 1
+                progress = download_finished[0] / total
+                # We don't have instant speed from the callback, so we just update progress
+                q.put({"step": "download", "value": 0, "progress": progress})
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-            for _ in range(4):
-                executor.submit(download_worker)
-            
-            while (time.time() - start_time) < duration:
-                time.sleep(0.2)
-                elapsed = time.time() - start_time
-                if elapsed > 0:
-                    speed_mbps = (downloaded_bytes * 8) / (elapsed * 1_000_000)
-                    q.put({"step": "download", "value": round(speed_mbps, 2), "progress": min(elapsed/duration, 1.0)})
-
-            is_testing = False
-            
-        final_dl_mbps = (downloaded_bytes * 8) / (duration * 1_000_000)
+        st.download(callback=dl_callback)
+        final_dl_mbps = st.results.download / 1_000_000
         q.put({"step": "download", "value": round(final_dl_mbps, 2), "progress": 1.0})
         time.sleep(0.5)
-        
-        # 4. Upload
-        duration = 8.0
-        start_time = time.time()
-        uploaded_bytes = 0
-        is_testing = True
-        
-        chunk = os.urandom(65536)
-        
-        def upload_worker():
-            nonlocal uploaded_bytes, is_testing
-            def data_generator():
-                while is_testing and (time.time() - start_time) < duration:
-                    yield chunk
-                    uploaded_bytes += len(chunk)
-                    
-            while is_testing and (time.time() - start_time) < duration:
-                try:
-                    requests.post(best_server["ul"], data=data_generator(), timeout=5)
-                except:
-                    pass
-                    
-        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-            for _ in range(4):
-                executor.submit(upload_worker)
-            
-            while (time.time() - start_time) < duration:
-                time.sleep(0.2)
-                elapsed = time.time() - start_time
-                if elapsed > 0:
-                    speed_mbps = (uploaded_bytes * 8) / (elapsed * 1_000_000)
-                    q.put({"step": "upload", "value": round(speed_mbps, 2), "progress": min(elapsed/duration, 1.0)})
 
-            is_testing = False
-            
-        final_ul_mbps = (uploaded_bytes * 8) / (duration * 1_000_000)
-        q.put({"step": "upload", "value": round(final_ul_mbps, 2), "progress": 1.0})
+        # 4. Upload
+        q.put({"step": "upload", "value": 0, "progress": 0})
         
+        upload_finished = [0]
+        def ul_callback(i, total, start=False, end=False):
+            if end:
+                upload_finished[0] += 1
+                progress = upload_finished[0] / total
+                q.put({"step": "upload", "value": 0, "progress": progress})
+
+        st.upload(callback=ul_callback)
+        final_ul_mbps = st.results.upload / 1_000_000
+        q.put({"step": "upload", "value": round(final_ul_mbps, 2), "progress": 1.0})
+
+        # 5. Résultats finaux
         q.put({
             "step": "done",
             "results": {
-                "ping": round(avg_ping, 1),
+                "ping": round(best_server['latency'], 1),
                 "download": round(final_dl_mbps, 2),
                 "upload": round(final_ul_mbps, 2)
             }
         })
+
     except Exception as e:
+        print(f"Speedtest error: {e}")
         q.put({"step": "error", "message": str(e)})
+
 
 
 @app.route('/api/ext_speedtest/run', methods=['GET'])
@@ -243,8 +162,15 @@ def mock_download():
 
 @app.route('/mock/upload', methods=['POST'])
 def mock_upload():
-    # Consume data stream entirely
-    _ = request.get_data()
+    # Consume data stream efficiently without loading all into memory
+    # Using request.input_stream to avoid triggering MAX_CONTENT_LENGTH or memory exhaustion
+    try:
+        while True:
+            chunk = request.stream.read(1024 * 1024)
+            if not chunk:
+                break
+    except:
+        pass
     return jsonify({'status': 'OK'})
 
 
@@ -274,7 +200,9 @@ def create_submission():
         quality=data['quality'].strip(),
         city=data['city'].strip(),
         neighborhood=data.get('neighborhood', '').strip() or None,
-        speed_mbps=float(data['speed_mbps']) if data.get('speed_mbps') else None
+        speed_mbps=float(data['speed_mbps']) if data.get('speed_mbps') else None,
+        upload_mbps=float(data['upload_mbps']) if data.get('upload_mbps') else None,
+        ping_ms=float(data['ping_ms']) if data.get('ping_ms') else None
     )
 
     db.session.add(submission)
@@ -416,7 +344,8 @@ def get_stats():
 
 @app.route('/api/ranking', methods=['GET'])
 def get_ranking():
-    """Classement des opérateurs avec scores détaillés."""
+    """Classement des opérateurs avec scores détaillés et tri personnalisable."""
+    sort_by = request.args.get('sort_by', 'quality') # quality, download, upload, ping
     quality_map = {'lent': 1, 'moyen': 2, 'rapide': 3}
 
     operators = {}
@@ -434,31 +363,47 @@ def get_ranking():
                 'total_submissions': 0,
                 'quality_score': 0,
                 'quality_counts': {'lent': 0, 'moyen': 0, 'rapide': 0},
-                'avg_speed': None
+                'avg_download': 0,
+                'avg_upload': 0,
+                'avg_ping': 0
             }
         operators[op]['total_submissions'] += cnt
         operators[op]['quality_score'] += quality_map.get(qual, 0) * cnt
         operators[op]['quality_counts'][qual] = cnt
 
-    # Calculer score moyen
+    # Calculer score moyen qualité
     for op in operators:
         total = operators[op]['total_submissions']
         if total > 0:
             operators[op]['quality_score'] = round(operators[op]['quality_score'] / total, 2)
 
-    # Vitesse moyenne
-    speed_rows = (
-        db.session.query(Submission.operator, func.avg(Submission.speed_mbps))
-        .filter(Submission.speed_mbps.isnot(None))
+    # Vitesse moyennes (Download, Upload, Ping)
+    metrics_rows = (
+        db.session.query(
+            Submission.operator, 
+            func.avg(Submission.speed_mbps),
+            func.avg(Submission.upload_mbps),
+            func.avg(Submission.ping_ms)
+        )
         .group_by(Submission.operator)
         .all()
     )
-    for op, avg_speed in speed_rows:
-        if op in operators and avg_speed:
-            operators[op]['avg_speed'] = round(avg_speed, 2)
+    for op, avg_dl, avg_ul, avg_ping in metrics_rows:
+        if op in operators:
+            operators[op]['avg_download'] = round(avg_dl, 2) if avg_dl else 0
+            operators[op]['avg_upload'] = round(avg_ul, 2) if avg_ul else 0
+            operators[op]['avg_ping'] = round(avg_ping, 1) if avg_ping else 0
 
-    # Trier par score qualité descendant
-    ranking = sorted(operators.values(), key=lambda x: x['quality_score'], reverse=True)
+    # Trier selon le critère demandé
+    if sort_by == 'download':
+        ranking = sorted(operators.values(), key=lambda x: x['avg_download'], reverse=True)
+    elif sort_by == 'upload':
+        ranking = sorted(operators.values(), key=lambda x: x['avg_upload'], reverse=True)
+    elif sort_by == 'ping':
+        # Pour le ping, le plus bas est le mieux
+        ranking = sorted(operators.values(), key=lambda x: x['avg_ping'] if x['avg_ping'] > 0 else float('inf'))
+    else: # quality
+        ranking = sorted(operators.values(), key=lambda x: x['quality_score'], reverse=True)
 
     # Ajouter le rang
     for i, entry in enumerate(ranking):

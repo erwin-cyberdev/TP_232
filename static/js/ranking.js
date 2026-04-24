@@ -14,15 +14,18 @@ const OPERATOR_COLORS = {
 
 const DEFAULT_COLOR = { bg: 'rgba(99, 102, 241, 0.15)', border: 'rgba(99, 102, 241, 0.4)', bar: '#6366f1' };
 
+let currentSort = 'quality';
+
 function getQualityLabel(score) {
     if (score >= 2.5) return { text: 'Excellent', class: 'badge-green', icon: '🚀' };
     if (score >= 1.8) return { text: 'Moyen', class: 'badge-yellow', icon: '🚶' };
     return { text: 'Faible', class: 'badge-red', icon: '🐢' };
 }
 
-async function loadRanking() {
+async function loadRanking(sortBy = 'quality') {
     try {
-        const res = await fetch('/api/ranking');
+        currentSort = sortBy;
+        const res = await fetch(`/api/ranking?sort_by=${sortBy}`);
         const ranking = await res.json();
 
         const container = document.getElementById('ranking-container');
@@ -87,8 +90,21 @@ async function loadRanking() {
                         </div>
                         <div class="rank-stat">
                             <div class="rank-stat-header">
-                                <span class="rank-stat-label">Vitesse moy.</span>
-                                <span class="rank-stat-value">${entry.avg_speed ? entry.avg_speed + ' Mbps' : '—'}</span>
+                                <span class="rank-stat-label">Metrics moyennes</span>
+                            </div>
+                            <div class="rank-metrics-grid">
+                                <div class="rank-metric-item">
+                                    <span class="rank-metric-val">${entry.avg_download}</span>
+                                    <span class="rank-metric-unit">Dl (Mbps)</span>
+                                </div>
+                                <div class="rank-metric-item">
+                                    <span class="rank-metric-val">${entry.avg_upload}</span>
+                                    <span class="rank-metric-unit">Ul (Mbps)</span>
+                                </div>
+                                <div class="rank-metric-item">
+                                    <span class="rank-metric-val">${entry.avg_ping}</span>
+                                    <span class="rank-metric-unit">Ping (ms)</span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -114,4 +130,16 @@ async function loadRanking() {
     }
 }
 
-document.addEventListener('DOMContentLoaded', loadRanking);
+document.addEventListener('DOMContentLoaded', () => {
+    loadRanking();
+
+    // Sort control events
+    const sortButtons = document.querySelectorAll('#ranking-sort-controls .btn');
+    sortButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            sortButtons.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            loadRanking(btn.dataset.sort);
+        });
+    });
+});

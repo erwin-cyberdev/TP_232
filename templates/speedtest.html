@@ -70,9 +70,10 @@
     <!-- Results & Save -->
     <div class="speedtest-results" id="speedtest-results" style="display:none;">
         <div class="card results-card">
-            <h3>💾 Sauvegarder ce résultat</h3>
+            <h3>✨ Sauvegarder votre mesure</h3>
             <p class="results-summary" id="results-summary"></p>
-            <div class="form-row">
+            
+            <div class="form-grid">
                 <div class="form-group">
                     <label for="st-operator">Opérateur</label>
                     <select id="st-operator">
@@ -80,23 +81,41 @@
                         <option value="MTN">MTN</option>
                         <option value="Orange">Orange</option>
                         <option value="Camtel">Camtel</option>
-                        <option value="Nexttel">Nexttel</option>
                         <option value="Yoomee">Yoomee</option>
                         <option value="Autre">Autre</option>
                     </select>
+                    <input type="text" id="st-operator-custom" style="display:none; margin-top: 8px;" placeholder="Nom de votre opérateur">
                 </div>
+                
+                <div class="form-group">
+                    <label for="st-speed">Download (Mbps)</label>
+                    <input type="text" id="st-speed" readonly placeholder="—">
+                </div>
+
+                <div class="form-group">
+                    <label for="st-upload">Upload (Mbps)</label>
+                    <input type="text" id="st-upload" readonly placeholder="—">
+                </div>
+
+                <div class="form-group">
+                    <label for="st-ping">Ping (ms)</label>
+                    <input type="text" id="st-ping" readonly placeholder="—">
+                </div>
+
                 <div class="form-group">
                     <label for="st-city">Ville</label>
                     <input type="text" id="st-city" placeholder="Ex: Douala">
                 </div>
+
+                <div class="form-group">
+                    <label for="st-neighborhood">Quartier (optionnel)</label>
+                    <input type="text" id="st-neighborhood" placeholder="Ex: Bonanjo">
+                </div>
             </div>
-            <div class="form-group">
-                <label for="st-neighborhood">Quartier (optionnel)</label>
-                <input type="text" id="st-neighborhood" placeholder="Ex: Bonanjo">
-            </div>
-            <button class="btn btn-primary" id="btn-save-result">Sauvegarder la soumission</button>
+
+            <button class="btn btn-primary" id="btn-save-result">Sauvegarder le résultat</button>
             <div id="save-alert" class="alert alert-success" style="display:none;">
-                ✅ Résultat sauvegardé avec succès !
+                ✅ Votre mesure a été enregistrée avec succès !
             </div>
         </div>
     </div>
