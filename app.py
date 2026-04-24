@@ -15,10 +15,10 @@ app = Flask(__name__)
 
 # Configuration base de données
 basedir = os.path.abspath(os.path.dirname(__file__))
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get(
-    'DATABASE_URL',
-    f'sqlite:///{os.path.join(basedir, "data.db")}'
-)
+db_url = os.environ.get('DATABASE_URL', f'sqlite:///{os.path.join(basedir, "data.db")}')
+if db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
+app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db.init_app(app)
