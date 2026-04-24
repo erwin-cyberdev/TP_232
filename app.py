@@ -1,7 +1,12 @@
 import os
 import time
 import random
-from flask import Flask, render_template, request, jsonify, Response
+import json
+import threading
+import queue
+import concurrent.futures
+import requests
+from flask import Flask, render_template, request, jsonify, Response, stream_with_context
 from models import db, Submission
 from sqlalchemy import func
 
@@ -55,42 +60,194 @@ def ranking():
 
 # ──────────────────────── Speed Test API ──────────────────────────
 
-@app.route('/api/speedtest/ping', methods=['GET'])
-def speedtest_ping():
-    """Endpoint simple et rapide pour mesurer la latence."""
+SERVERS = [
+    {
+        "name": "Localhost Serveur (Fiable)",
+        "ping": "http://127.0.0.1:5000/mock/ping",
+        "dl": "http://127.0.0.1:5000/mock/download",
+        "ul": "http://127.0.0.1:5000/mock/upload"
+    },
+    {
+        "name": "Tele2 Frankfurt",
+        "ping": "http://fra.speedtest.tele2.net/1MB.zip",
+        "dl": "http://fra.speedtest.tele2.net/100MB.zip",
+        "ul": "http://fra.speedtest.tele2.net/upload.php"
+    },
+    {
+        "name": "Tele2 Amsterdam",
+        "ping": "http://ams.speedtest.tele2.net/1MB.zip",
+        "dl": "http://ams.speedtest.tele2.net/100MB.zip",
+        "ul": "http://ams.speedtest.tele2.net/upload.php"
+    }
+]
+
+def speedtest_engine(q):
+    try:
+        # 1. Sélection du serveur
+        q.put({"step": "init", "message": "Sélection du serveur..."})
+        best_server = None
+        best_latency = float('inf')
+        
+        for s in SERVERS:
+            try:
+                start = time.time()
+                requests.get(s["ping"], timeout=2, stream=True).close()
+                latency = (time.time() - start) * 1000
+                if latency < best_latency:
+                    best_latency = latency
+                    best_server = s
+            except Exception:
+                pass
+                
+        if not best_server:
+            best_server = SERVERS[0]
+            
+        q.put({"step": "init", "message": f"Serveur sélectionné: {best_server['name']}"})
+        time.sleep(0.5)
+        
+        # 2. Ping
+        q.put({"step": "ping", "value": 0, "server_name": best_server['name']})
+        latencies = []
+        for _ in range(5):
+            try:
+                start = time.time()
+                r = requests.get(best_server["ping"], stream=True, timeout=2)
+                latencies.append((time.time() - start) * 1000)
+                r.close()
+            except:
+                pass
+        avg_ping = sum(latencies)/len(latencies) if latencies else 0
+        q.put({"step": "ping", "value": round(avg_ping, 1), "server_name": best_server['name']})
+        time.sleep(0.5)
+        
+        # 3. Download
+        duration = 8.0
+        start_time = time.time()
+        downloaded_bytes = 0
+        is_testing = True
+        
+        def download_worker():
+            nonlocal downloaded_bytes, is_testing
+            while is_testing and (time.time() - start_time) < duration:
+                try:
+                    with requests.get(best_server["dl"], stream=True, timeout=5) as r:
+                        for chunk in r.iter_content(chunk_size=65536):
+                            if not is_testing or (time.time() - start_time) > duration:
+                                break
+                            if chunk:
+                                downloaded_bytes += len(chunk)
+                except:
+                    pass
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            for _ in range(4):
+                executor.submit(download_worker)
+            
+            while (time.time() - start_time) < duration:
+                time.sleep(0.2)
+                elapsed = time.time() - start_time
+                if elapsed > 0:
+                    speed_mbps = (downloaded_bytes * 8) / (elapsed * 1_000_000)
+                    q.put({"step": "download", "value": round(speed_mbps, 2), "progress": min(elapsed/duration, 1.0)})
+
+            is_testing = False
+            
+        final_dl_mbps = (downloaded_bytes * 8) / (duration * 1_000_000)
+        q.put({"step": "download", "value": round(final_dl_mbps, 2), "progress": 1.0})
+        time.sleep(0.5)
+        
+        # 4. Upload
+        duration = 8.0
+        start_time = time.time()
+        uploaded_bytes = 0
+        is_testing = True
+        
+        chunk = os.urandom(65536)
+        
+        def upload_worker():
+            nonlocal uploaded_bytes, is_testing
+            def data_generator():
+                while is_testing and (time.time() - start_time) < duration:
+                    yield chunk
+                    uploaded_bytes += len(chunk)
+                    
+            while is_testing and (time.time() - start_time) < duration:
+                try:
+                    requests.post(best_server["ul"], data=data_generator(), timeout=5)
+                except:
+                    pass
+                    
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            for _ in range(4):
+                executor.submit(upload_worker)
+            
+            while (time.time() - start_time) < duration:
+                time.sleep(0.2)
+                elapsed = time.time() - start_time
+                if elapsed > 0:
+                    speed_mbps = (uploaded_bytes * 8) / (elapsed * 1_000_000)
+                    q.put({"step": "upload", "value": round(speed_mbps, 2), "progress": min(elapsed/duration, 1.0)})
+
+            is_testing = False
+            
+        final_ul_mbps = (uploaded_bytes * 8) / (duration * 1_000_000)
+        q.put({"step": "upload", "value": round(final_ul_mbps, 2), "progress": 1.0})
+        
+        q.put({
+            "step": "done",
+            "results": {
+                "ping": round(avg_ping, 1),
+                "download": round(final_dl_mbps, 2),
+                "upload": round(final_ul_mbps, 2)
+            }
+        })
+    except Exception as e:
+        q.put({"step": "error", "message": str(e)})
+
+
+@app.route('/api/ext_speedtest/run', methods=['GET'])
+def ext_speedtest_run():
+    def generate():
+        q = queue.Queue()
+        engine_thread = threading.Thread(target=speedtest_engine, args=(q,))
+        engine_thread.start()
+        
+        while True:
+            try:
+                data = q.get(timeout=15)
+                yield f"data: {json.dumps(data)}\n\n"
+                if data.get("step") in ("done", "error"):
+                    break
+            except queue.Empty:
+                yield "data: {\"step\": \"error\", \"message\": \"Timeout\"}\n\n"
+                break
+                
+    return Response(stream_with_context(generate()), mimetype='text/event-stream')
+
+
+# ──────────────────────── Local Mock Target ────────────────────────
+@app.route('/mock/ping', methods=['GET'])
+def mock_ping():
     return jsonify({'pong': True})
 
-@app.route('/api/speedtest/download', methods=['GET'])
-def speedtest_download():
-    """
-    Stream une très grande quantité de données binaires aléatoires en continu
-    (par chunks) pour mesurer précisément le débit descendant maximum.
-    """
-    # Un chunk random pré-alloué de 64KB (évite de saturer le CPU avec os.urandom continuellement)
-    import os
+@app.route('/mock/download', methods=['GET'])
+def mock_download():
     chunk = os.urandom(65536)
-    
-    # On simule 200 Mo de durée (3200 chunks * 64KB), ce qui est suffisant pour 10-15s
-    num_chunks = 3200 
-    
     def generate():
-        for _ in range(num_chunks):
+        for _ in range(8000): # 500 MB mock
+            time.sleep(0.001) # Simulate network delay
             yield chunk
-
     response = Response(generate(), mimetype='application/octet-stream')
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-    response.headers['Pragma'] = 'no-cache'
-    response.headers['Expires'] = '0'
     return response
 
-@app.route('/api/speedtest/upload', methods=['POST'])
-def speedtest_upload():
-    """
-    Accepte de larges requêtes POST pour mesurer l'upload et répond immédiatement.
-    Flask lit implicitement tout le payload de la requête.
-    """
-    _ = request.get_data() # Forcer la lecture en mémoire du binaire
-    return jsonify({'status': 'OK'}), 200
+@app.route('/mock/upload', methods=['POST'])
+def mock_upload():
+    # Consume data stream entirely
+    _ = request.get_data()
+    return jsonify({'status': 'OK'})
+
+
 
 
 # ──────────────────────── Submissions API ──────────────────────────

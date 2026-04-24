@@ -36,183 +36,10 @@ function setStatus(text) {
     document.getElementById('speedtest-status').textContent = text;
 }
 
-// ── Speed Test Sub-Tasks ──
-
-async function runPingTest() {
-    setStatus('📡 Mesure du ping (Latence)...');
-    const times = [];
-    const iterations = 8;
-    
-    document.getElementById(`gauge-ping-fill`).style.transition = 'stroke-dashoffset 0.3s ease-out';
-
-    // Sequential for precise single connection latency
-    for (let i = 0; i < iterations; i++) {
-        const start = performance.now();
-        try {
-            await fetch(`/api/speedtest/ping?_=${Date.now()}`, { cache: 'no-store' });
-            times.push(performance.now() - start);
-            setGauge('ping', times[times.length - 1], 200, false);
-        } catch(e) {}
-    }
-    
-    // Smooth out outliers
-    times.sort((a, b) => a - b);
-    if (times.length > 0) times.pop();
-    if (times.length > 2) times.shift();
-    
-    const avg = times.reduce((a, b) => a + b, 0) / times.length;
-    return Math.round(avg) || 0;
-}
-
-async function runDownloadTest() {
-    setStatus('⬇️ Mesure de la bande passante descendante (Multi-connexions)...');
-    document.getElementById(`gauge-download-fill`).style.transition = 'stroke-dashoffset 0.2s linear';
-    
-    return new Promise((resolve) => {
-        let totalBytes = 0;
-        let isTesting = true;
-        let isWarmup = true;
-        
-        let previousBytes = 0;
-        let previousTime = 0;
-
-        // Start multiple async workers
-        Array.from({ length: PARALLEL_CONNECTIONS }).forEach(async () => {
-            while (isTesting) {
-                try {
-                    const response = await fetch('/api/speedtest/download?_=' + Date.now(), { cache: 'no-store' });
-                    const reader = response.body.getReader();
-                    
-                    while (isTesting) {
-                        const { done, value } = await reader.read();
-                        if (done) break;
-                        if (!isWarmup) {
-                            totalBytes += value.length;
-                        }
-                    }
-                    if (!isTesting) reader.cancel();
-                } catch (e) {
-                    // Ignore aborts
-                }
-            }
-        });
-
-        // End Warmup phase
-        setTimeout(() => {
-            isWarmup = false;
-            previousTime = performance.now();
-            previousBytes = 0;
-            totalBytes = 0;
-        }, WARMUP_DURATION_MS);
-
-        // UI Refresh Loop
-        const interval = setInterval(() => {
-            if (isWarmup) return;
-            const now = performance.now();
-            const elapsedSinceLast = (now - previousTime) / 1000;
-            const bytesSinceLast = totalBytes - previousBytes;
-            
-            if (elapsedSinceLast > 0.1 && bytesSinceLast > 0) {
-                const currentMbps = (bytesSinceLast * 8) / (elapsedSinceLast * 1000000);
-                setGauge('download', currentMbps, 100);
-                previousTime = now;
-                previousBytes = totalBytes;
-            }
-        }, 250);
-
-        // Test over
-        setTimeout(() => {
-            isTesting = false;
-            clearInterval(interval);
-            const finalMbps = (totalBytes * 8) / ((TEST_DURATION_MS) / 1000 * 1000000);
-            resolve(Math.round(finalMbps * 100) / 100);
-        }, TEST_DURATION_MS + WARMUP_DURATION_MS);
-    });
-}
-
-async function runUploadTest() {
-    setStatus('⬆️ Mesure de la bande passante montante (Multi-connexions)...');
-    document.getElementById(`gauge-upload-fill`).style.transition = 'stroke-dashoffset 0.2s linear';
-    
-    return new Promise((resolve) => {
-        let totalBytes = 0;
-        let isTesting = true;
-        let isWarmup = true;
-        
-        // Prepare pre-allocated 2MB Blob locally
-        const payloadSize = 2 * 1024 * 1024;
-        const payload = new Uint8Array(payloadSize);
-        // Randomize minimal to trick compression proxies
-        for(let i=0; i<payloadSize; i+=4096) payload[i] = Math.random() * 256;
-
-        let previousBytes = 0;
-        let previousTime = 0;
-
-        // Workers sending POSTs sequentially within their loop 
-        Array.from({ length: PARALLEL_CONNECTIONS }).forEach(async () => {
-            while (isTesting) {
-                await new Promise((resWorker) => {
-                    const xhr = new XMLHttpRequest();
-                    xhr.open('POST', '/api/speedtest/upload?_=' + Date.now());
-                    
-                    let lastLoaded = 0;
-                    xhr.upload.onprogress = (e) => {
-                        if (!isWarmup && isTesting) {
-                            const diff = e.loaded - lastLoaded;
-                            lastLoaded = e.loaded;
-                            totalBytes += diff;
-                        }
-                    };
-                    
-                    xhr.onload = () => resWorker();
-                    xhr.onerror = () => resWorker();
-                    
-                    if (!isTesting) { 
-                        xhr.abort(); 
-                        resWorker(); 
-                    } else {
-                        xhr.send(payload);
-                    }
-                });
-            }
-        });
-
-        // Warmup
-        setTimeout(() => {
-            isWarmup = false;
-            previousTime = performance.now();
-            previousBytes = 0;
-            totalBytes = 0;
-        }, WARMUP_DURATION_MS);
-
-        // UI Refresh Loop
-        const interval = setInterval(() => {
-            if (isWarmup) return;
-            const now = performance.now();
-            const elapsedSinceLast = (now - previousTime) / 1000;
-            const bytesSinceLast = totalBytes - previousBytes;
-            
-            if (elapsedSinceLast > 0.1 && bytesSinceLast > 0) {
-                const currentMbps = (bytesSinceLast * 8) / (elapsedSinceLast * 1000000);
-                setGauge('upload', currentMbps, 50);
-                previousTime = now;
-                previousBytes = totalBytes;
-            }
-        }, 250);
-
-        // Test over
-        setTimeout(() => {
-            isTesting = false;
-            clearInterval(interval);
-            const finalMbps = (totalBytes * 8) / ((TEST_DURATION_MS) / 1000 * 1000000);
-            resolve(Math.round(finalMbps * 100) / 100);
-        }, TEST_DURATION_MS + WARMUP_DURATION_MS);
-    });
-}
 
 // ── Orchestration ──
 
-async function runSpeedTest() {
+function runSpeedTest() {
     if (isRunning) return;
     isRunning = true;
 
@@ -228,51 +55,82 @@ async function runSpeedTest() {
     const lbl = document.getElementById('progress-label');
     
     resetGauges();
+    
+    fill.style.transition = 'width 0.3s ease';
+    fill.style.width = '5%';
+    lbl.textContent = 'Connexion au serveur...';
 
-    try {
-        fill.style.transition = 'width 1s ease';
-        fill.style.width = '10%';
-        lbl.textContent = 'Initialisation...';
+    const eventSource = new EventSource('/api/ext_speedtest/run');
+
+    eventSource.onmessage = (e) => {
+        const data = JSON.parse(e.data);
         
-        testResults.ping = await runPingTest();
-        setGauge('ping', testResults.ping, 200, false);
-        document.getElementById(`gauge-ping-fill`).style.transition = 'stroke-dashoffset 0.6s ease-out';
-        
-        fill.style.width = '33%';
-        lbl.textContent = 'Download...';
-        
-        testResults.download = await runDownloadTest();
-        setGauge('download', testResults.download, 100);
-        document.getElementById(`gauge-download-fill`).style.transition = 'stroke-dashoffset 0.6s ease-out';
+        if (data.step === 'init') {
+            setStatus('🌐 ' + data.message);
+        } else if (data.step === 'ping') {
+            fill.style.width = '20%';
+            lbl.textContent = 'Ping...';
+            setStatus('📡 Mesure du ping serveur (' + data.server_name + ') : ' + data.value + ' ms');
+            setGauge('ping', data.value, 200, false);
+            document.getElementById(`gauge-ping-fill`).style.transition = 'stroke-dashoffset 0.6s ease-out';
+        } else if (data.step === 'download') {
+            const prog = 20 + (data.progress * 40);
+            fill.style.width = prog + '%';
+            lbl.textContent = 'Download... ' + Math.round(data.progress * 100) + '%';
+            setStatus('⬇️ Download... ' + data.value.toFixed(2) + ' Mbps');
+            setGauge('download', data.value, 100);
+            document.getElementById(`gauge-download-fill`).style.transition = 'stroke-dashoffset 0.3s ease-out';
+        } else if (data.step === 'upload') {
+            const prog = 60 + (data.progress * 40);
+            fill.style.width = prog + '%';
+            lbl.textContent = 'Upload... ' + Math.round(data.progress * 100) + '%';
+            setStatus('⬆️ Upload... ' + data.value.toFixed(2) + ' Mbps');
+            setGauge('upload', data.value, 50);
+            document.getElementById(`gauge-upload-fill`).style.transition = 'stroke-dashoffset 0.3s ease-out';
+        } else if (data.step === 'done') {
+            fill.style.width = '100%';
+            lbl.textContent = '100%';
+            setStatus('✅ Test de vitesse terminé sur le serveur Python avec requêtes simultanées.');
+            
+            testResults.ping = data.results.ping;
+            testResults.download = data.results.download;
+            testResults.upload = data.results.upload;
+            
+            // Show save form
+            const resultsDiv = document.getElementById('speedtest-results');
+            const summary = document.getElementById('results-summary');
+            summary.textContent = `Dl: ${testResults.download} Mbps | Ul: ${testResults.upload} Mbps | Ping: ${testResults.ping} ms`;
+            resultsDiv.style.display = 'block';
+            resultsDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            
+            eventSource.close();
+            
+            isRunning = false;
+            btn.disabled = false;
+            btn.innerHTML = '<span class="btn-icon">▶</span><span>Relancer le Speed Test</span>';
+            setTimeout(() => { document.getElementById('progress-container').style.display = 'none'; }, 2000);
+        } else if (data.step === 'error') {
+            resetGauges();
+            setStatus('❌ Erreur : ' + data.message);
+            eventSource.close();
+            
+            isRunning = false;
+            btn.disabled = false;
+            btn.innerHTML = '<span class="btn-icon">▶</span><span>Relancer le Speed Test</span>';
+            setTimeout(() => { document.getElementById('progress-container').style.display = 'none'; }, 2000);
+        }
+    };
 
-        fill.style.width = '66%';
-        lbl.textContent = 'Upload...';
-        
-        testResults.upload = await runUploadTest();
-        setGauge('upload', testResults.upload, 50);
-        document.getElementById(`gauge-upload-fill`).style.transition = 'stroke-dashoffset 0.6s ease-out';
-
-        fill.style.width = '100%';
-        lbl.textContent = '100%';
-        setStatus('✅ Test de vitesse terminé selon les standards professionnels');
-
-        // Show save form
-        const resultsDiv = document.getElementById('speedtest-results');
-        const summary = document.getElementById('results-summary');
-        summary.textContent = `Périodes: 12s | Dl: ${testResults.download} Mbps | Ul: ${testResults.upload} Mbps | Ping: ${testResults.ping} ms`;
-        resultsDiv.style.display = 'block';
-        resultsDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-    } catch (err) {
+    eventSource.onerror = (e) => {
         resetGauges();
-        setStatus('❌ Erreur pendant le test : ' + err.message);
-        console.error(err);
-    } finally {
+        setStatus('❌ Erreur de connexion au flux SSE.');
+        eventSource.close();
+        
         isRunning = false;
         btn.disabled = false;
         btn.innerHTML = '<span class="btn-icon">▶</span><span>Relancer le Speed Test</span>';
         setTimeout(() => { document.getElementById('progress-container').style.display = 'none'; }, 2000);
-    }
+    };
 }
 
 // ── Save result ──
@@ -282,7 +140,7 @@ async function saveResult() {
     const neighborhood = document.getElementById('st-neighborhood').value;
 
     if (!operator || !city) {
-        alert('Veuillez remplir l\\'opérateur et la ville.');
+        alert("Veuillez remplir l'opérateur et la ville.");
         return;
     }
 
