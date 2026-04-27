@@ -1145,45 +1145,51 @@ input[readonly] {
         border-radius: var(--radius-sm);
     }
 
-    /* Admin Table Mobile Reflow */
+    /* Admin Table Tactile Scroll */
+    .table-responsive {
+        width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        padding-bottom: 8px;
+    }
+
+    .admin-table {
+        min-width: 600px; /* Force scrollable on small screens */
+    }
+
     .admin-table thead {
-        display: none;
+        display: table-header-group;
     }
 
     .admin-table, .admin-table tbody, .admin-table tr, .admin-table td {
-        display: block;
-        width: 100%;
+        display: table-cell;
+        width: auto;
     }
 
     .admin-table tr {
-        margin-bottom: 16px;
-        border: 1px solid var(--border-color);
-        border-radius: var(--radius-sm);
-        padding: 8px;
-        background: var(--bg-secondary);
+        display: table-row;
+        margin-bottom: 0;
+        border: none;
+        border-radius: 0;
+        padding: 0;
+        background: transparent;
     }
 
     .admin-table td {
-        text-align: right;
-        padding: 10px 12px;
-        position: relative;
-        border-bottom: 1px solid rgba(0, 0, 0, 0.05);
-    }
-
-    .admin-table td:last-child {
-        border-bottom: none;
+        text-align: left;
+        padding: 12px 16px;
+        position: static;
+        border-bottom: 1px solid var(--border-color);
     }
 
     .admin-table td::before {
-        content: attr(data-label);
-        position: absolute;
-        left: 12px;
-        width: 45%;
-        text-align: left;
-        font-weight: 700;
-        color: var(--text-muted);
-        text-transform: uppercase;
-        font-size: 0.7rem;
+        display: none;
+    }
+
+    /* Tactile targets */
+    .btn-sm-danger {
+        padding: 12px 20px;
+        min-width: 80px;
     }
 }
 
