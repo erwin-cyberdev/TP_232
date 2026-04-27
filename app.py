@@ -12,17 +12,31 @@ app = Flask(__name__)
 
 # Configuration base de données
 basedir = os.path.abspath(os.path.dirname(__file__))
-db_url = os.environ.get('DATABASE_URL', f'sqlite:///{os.path.join(basedir, "data.db")}')
-if db_url.startswith("postgres://"):
-    db_url = db_url.replace("postgres://", "postgresql://", 1)
+
+# On cherche DATABASE_URL (interne) ou DATABASE_PUBLIC_URL (externe)
+db_url = os.environ.get('DATABASE_URL') or os.environ.get('DATABASE_PUBLIC_URL')
+
+if not db_url:
+    db_url = f'sqlite:///{os.path.join(basedir, "data.db")}'
+    print("⚠️ DATABASE_URL non trouvée, passage en mode SQLite (non persistant sur Railway)")
+else:
+    # Correction pour SQLAlchemy 2.x (doit être postgresql:// et non postgres://)
+    if db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql://", 1)
+    print("✅ Base de données DATABASE_URL détectée (PostgreSQL)")
+
 app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024  # 200MB max upload
+app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024
 
 db.init_app(app)
 
 with app.app_context():
-    db.create_all()
+    try:
+        db.create_all()
+        print("🚀 Tables de la base de données initialisées avec succès")
+    except Exception as e:
+        print(f"❌ Erreur lors de l'initialisation de la base : {e}")
 
 
 # ──────────────────────────── Pages ────────────────────────────
