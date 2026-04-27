@@ -23,7 +23,7 @@ const CONFIG = {
     UL_DURATION_MS: 10000,       // Durée test upload (10s)
     UL_WARMUP_MS: 2000,          // Warmup upload (2s)
     UL_CONNECTIONS: 4,           // Connexions parallèles upload
-    UL_CHUNK_SIZE: 131072,       // Taille chunk upload (128 KB)
+    UL_CHUNK_SIZE: 65536,         // Taille chunk upload (64 KB - limite crypto.getRandomValues)
     UPDATE_INTERVAL_MS: 300,     // Fréquence mise à jour UI
 };
 
@@ -212,9 +212,12 @@ async function measureUpload() {
     let currentSpeed = 0;
     let shouldStop = false;
     
-    // Pré-générer un buffer de données aléatoires
+    // Pré-générer un buffer de données aléatoires (64 KB max pour getRandomValues)
     const uploadData = new Uint8Array(CONFIG.UL_CHUNK_SIZE);
-    crypto.getRandomValues(uploadData);
+    for (let offset = 0; offset < uploadData.length; offset += 65536) {
+        const size = Math.min(65536, uploadData.length - offset);
+        crypto.getRandomValues(uploadData.subarray(offset, offset + size));
+    }
     
     // Timer pour arrêter
     const timeout = setTimeout(() => { shouldStop = true; }, CONFIG.UL_DURATION_MS);
