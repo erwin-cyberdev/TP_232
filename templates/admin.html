@@ -42,68 +42,6 @@
     </div>
 </div>
 
-<style>
-.admin-container {
-    padding: 2rem 0;
-}
-.admin-actions {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 2rem;
-    margin-bottom: 2rem;
-}
-.action-card {
-    border-left: 4px solid var(--danger);
-}
-.btn-danger {
-    background: linear-gradient(135deg, #ff4d4d, #cc0000);
-    color: white;
-}
-.btn-danger:hover {
-    box-shadow: 0 0 15px rgba(255, 77, 77, 0.4);
-    transform: translateY(-2px);
-}
-.admin-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 1rem;
-}
-.admin-table th, .admin-table td {
-    padding: 1rem;
-    text-align: left;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
-.admin-table tr:hover {
-    background: rgba(255, 255, 255, 0.03);
-}
-.btn-sm-danger {
-    padding: 0.4rem 0.8rem;
-    font-size: 0.85rem;
-    background: rgba(255, 77, 77, 0.1);
-    color: #ff4d4d;
-    border: 1px solid #ff4d4d;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 0.3s ease;
-}
-.btn-sm-danger:hover {
-    background: #ff4d4d;
-    color: white;
-}
-.status-msg {
-    margin: 1rem 0;
-    padding: 1rem;
-    border-radius: 8px;
-    display: none;
-}
-.status-msg.error {
-    display: block;
-    background: rgba(255, 77, 77, 0.1);
-    color: #ff4d4d;
-}
-</style>
-{% endblock %}
-
 {% block scripts %}
 <script>
 let currentPage = 1;
@@ -111,6 +49,7 @@ let currentPage = 1;
 async function loadSubmissions(page = 1) {
     const status = document.getElementById('admin-status');
     const tbody = document.getElementById('admin-submissions-body');
+    currentPage = page;
     
     try {
         const res = await fetch(`/api/submissions?page=${page}&per_page=20`);
@@ -124,11 +63,11 @@ async function loadSubmissions(page = 1) {
 
         tbody.innerHTML = result.data.map(s => `
             <tr>
-                <td>${new Date(s.created_at).toLocaleString()}</td>
-                <td><span class="badge">${s.operator}</span></td>
-                <td>${s.city}</td>
-                <td><strong>${s.speed_mbps || '—'}</strong></td>
-                <td>
+                <td data-label="Date">${new Date(s.created_at).toLocaleString()}</td>
+                <td data-label="Opérateur"><span class="badge">${s.operator}</span></td>
+                <td data-label="Ville">${s.city}</td>
+                <td data-label="Vitesse">${s.speed_mbps ? s.speed_mbps + ' Mbps' : '—'}</td>
+                <td data-label="Actions">
                     <button class="btn-sm-danger" onclick="deleteSubmission(${s.id})">Supprimer</button>
                 </td>
             </tr>
