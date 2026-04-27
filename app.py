@@ -3,12 +3,9 @@ import time
 import json
 import threading
 import queue
-import speedtest
 from flask import Flask, render_template, request, jsonify, Response, stream_with_context
 from models import db, Submission
 from sqlalchemy import func
-
-
 
 
 app = Flask(__name__)
@@ -20,6 +17,7 @@ if db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql://", 1)
 app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024  # 200MB max upload
 
 db.init_app(app)
 
@@ -53,127 +51,61 @@ def ranking():
     return render_template('ranking.html')
 
 
-# ──────────────────────── Speed Test API ──────────────────────────
+# ════════════════════════════════════════════════════════════════
+#  SPEEDTEST — Endpoints cibles (le navigateur teste contre eux)
+# ════════════════════════════════════════════════════════════════
+
+# Chunk de données aléatoires pré-généré (64 KB) pour le download
+_DOWNLOAD_CHUNK = os.urandom(65536)
 
 
-
-def speedtest_engine(q):
-    try:
-        # 1. Initialisation
-        q.put({"step": "init", "message": "Initialisation du moteur Speedtest-cli..."})
-        st = speedtest.Speedtest()
-        
-        # 2. Recherche du meilleur serveur
-        q.put({"step": "init", "message": "Recherche du meilleur serveur..."})
-        st.get_best_server()
-        best_server = st.best
-        server_name = f"{best_server['sponsor']} ({best_server['name']})"
-        
-        q.put({
-            "step": "ping", 
-            "value": round(best_server['latency'], 1), 
-            "jitter": 0, # speedtest-cli doesn't provide jitter natively in results
-            "server_name": server_name
-        })
-        time.sleep(1)
-
-        # 3. Download
-        q.put({"step": "download", "value": 0, "progress": 0})
-        
-        # Counter for progress
-        download_finished = [0]
-        def dl_callback(i, total, start=False, end=False):
-            if end:
-                download_finished[0] += 1
-                progress = download_finished[0] / total
-                # We don't have instant speed from the callback, so we just update progress
-                q.put({"step": "download", "value": 0, "progress": progress})
-
-        st.download(callback=dl_callback)
-        final_dl_mbps = st.results.download / 1_000_000
-        q.put({"step": "download", "value": round(final_dl_mbps, 2), "progress": 1.0})
-        time.sleep(0.5)
-
-        # 4. Upload
-        q.put({"step": "upload", "value": 0, "progress": 0})
-        
-        upload_finished = [0]
-        def ul_callback(i, total, start=False, end=False):
-            if end:
-                upload_finished[0] += 1
-                progress = upload_finished[0] / total
-                q.put({"step": "upload", "value": 0, "progress": progress})
-
-        st.upload(callback=ul_callback)
-        final_ul_mbps = st.results.upload / 1_000_000
-        q.put({"step": "upload", "value": round(final_ul_mbps, 2), "progress": 1.0})
-
-        # 5. Résultats finaux
-        q.put({
-            "step": "done",
-            "results": {
-                "ping": round(best_server['latency'], 1),
-                "download": round(final_dl_mbps, 2),
-                "upload": round(final_ul_mbps, 2)
-            }
-        })
-
-    except Exception as e:
-        print(f"Speedtest error: {e}")
-        q.put({"step": "error", "message": str(e)})
+@app.route('/st/ping', methods=['GET'])
+def st_ping():
+    """Endpoint léger pour mesure de latence.
+    Le client envoie un timestamp, on le renvoie immédiatement.
+    """
+    return jsonify({'pong': True, 't': time.time()})
 
 
+@app.route('/st/download', methods=['GET'])
+def st_download():
+    """Stream ~100 MB de données aléatoires en chunks de 64 KB.
+    Le navigateur mesure le débit en lisant ce flux.
+    """
+    size_mb = request.args.get('size', 100, type=int)
+    size_mb = min(size_mb, 200)  # Cap à 200 MB
+    total_chunks = (size_mb * 1024 * 1024) // len(_DOWNLOAD_CHUNK)
 
-@app.route('/api/ext_speedtest/run', methods=['GET'])
-def ext_speedtest_run():
     def generate():
-        q = queue.Queue()
-        engine_thread = threading.Thread(target=speedtest_engine, args=(q,))
-        engine_thread.start()
-        
-        while True:
-            try:
-                data = q.get(timeout=15)
-                yield f"data: {json.dumps(data)}\n\n"
-                if data.get("step") in ("done", "error"):
-                    break
-            except queue.Empty:
-                yield "data: {\"step\": \"error\", \"message\": \"Timeout\"}\n\n"
-                break
-                
-    return Response(stream_with_context(generate()), mimetype='text/event-stream')
+        for _ in range(total_chunks):
+            yield _DOWNLOAD_CHUNK
+
+    return Response(
+        generate(),
+        mimetype='application/octet-stream',
+        headers={
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Content-Length': str(total_chunks * len(_DOWNLOAD_CHUNK)),
+            'X-Accel-Buffering': 'no',
+        }
+    )
 
 
-# ──────────────────────── Local Mock Target ────────────────────────
-@app.route('/mock/ping', methods=['GET'])
-def mock_ping():
-    return jsonify({'pong': True})
-
-@app.route('/mock/download', methods=['GET'])
-def mock_download():
-    chunk = os.urandom(65536)
-    def generate():
-        for _ in range(8000): # 500 MB mock
-            time.sleep(0.001) # Simulate network delay
-            yield chunk
-    response = Response(generate(), mimetype='application/octet-stream')
-    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-    return response
-
-@app.route('/mock/upload', methods=['POST'])
-def mock_upload():
-    # Consume data stream efficiently without loading all into memory
-    # Using request.input_stream to avoid triggering MAX_CONTENT_LENGTH or memory exhaustion
+@app.route('/st/upload', methods=['POST'])
+def st_upload():
+    """Consomme le body uploadé et renvoie le nombre d'octets reçus.
+    Le navigateur mesure le débit d'envoi.
+    """
+    total_bytes = 0
     try:
         while True:
-            chunk = request.stream.read(1024 * 1024)
+            chunk = request.stream.read(1024 * 1024)  # Lire par blocs de 1 MB
             if not chunk:
                 break
-    except:
+            total_bytes += len(chunk)
+    except Exception:
         pass
-    return jsonify({'status': 'OK'})
-
-
+    return jsonify({'bytes_received': total_bytes})
 
 
 # ──────────────────────── Submissions API ──────────────────────────
@@ -195,14 +127,15 @@ def create_submission():
     if data['quality'] not in valid_qualities:
         return jsonify({'error': f'Qualité invalide. Valeurs acceptées : {valid_qualities}'}), 400
 
+    neighborhood_val = data.get('neighborhood')
     submission = Submission(
         operator=data['operator'].strip(),
         quality=data['quality'].strip(),
         city=data['city'].strip(),
-        neighborhood=data.get('neighborhood', '').strip() or None,
-        speed_mbps=float(data['speed_mbps']) if data.get('speed_mbps') else None,
-        upload_mbps=float(data['upload_mbps']) if data.get('upload_mbps') else None,
-        ping_ms=float(data['ping_ms']) if data.get('ping_ms') else None
+        neighborhood=neighborhood_val.strip() if neighborhood_val else None,
+        speed_mbps=float(data['speed_mbps']) if data.get('speed_mbps') is not None else None,
+        upload_mbps=float(data['upload_mbps']) if data.get('upload_mbps') is not None else None,
+        ping_ms=float(data['ping_ms']) if data.get('ping_ms') is not None else None
     )
 
     db.session.add(submission)
@@ -268,20 +201,21 @@ def get_stats():
     operator = request.args.get('operator')
     city = request.args.get('city')
 
-    base_query = Submission.query
-    if operator:
-        base_query = base_query.filter(Submission.operator == operator)
-    if city:
-        base_query = base_query.filter(Submission.city == city)
+    def apply_filters(query):
+        if operator:
+            query = query.filter(Submission.operator == operator)
+        if city:
+            query = query.filter(Submission.city == city)
+        return query
 
-    total = base_query.count()
+    total = apply_filters(Submission.query).count()
 
     # ── Qualité par opérateur ──
     quality_map = {'lent': 1, 'moyen': 2, 'rapide': 3}
     quality_by_operator = {}
+    q_quality = db.session.query(Submission.operator, Submission.quality, func.count())
     rows = (
-        db.session.query(Submission.operator, Submission.quality, func.count())
-        .filter(base_query.whereclause if base_query.whereclause is not None else True)
+        apply_filters(q_quality)
         .group_by(Submission.operator, Submission.quality)
         .all()
     )
@@ -307,18 +241,14 @@ def get_stats():
         quality_distribution = {k: round(v / total * 100, 1) for k, v in quality_distribution.items()}
 
     # ── Soumissions par zone ──
-    zone_rows = (
-        db.session.query(Submission.city, func.count())
-        .filter(base_query.whereclause if base_query.whereclause is not None else True)
-        .group_by(Submission.city)
-        .all()
-    )
+    q_zones = db.session.query(Submission.city, func.count())
+    zone_rows = apply_filters(q_zones).group_by(Submission.city).all()
     submissions_by_zone = {city_name: cnt for city_name, cnt in zone_rows}
 
     # ── Vitesse moyenne par opérateur ──
+    q_speeds = db.session.query(Submission.operator, func.avg(Submission.speed_mbps))
     speed_rows = (
-        db.session.query(Submission.operator, func.avg(Submission.speed_mbps))
-        .filter(base_query.whereclause if base_query.whereclause is not None else True)
+        apply_filters(q_speeds)
         .filter(Submission.speed_mbps.isnot(None))
         .group_by(Submission.operator)
         .all()
@@ -345,7 +275,7 @@ def get_stats():
 @app.route('/api/ranking', methods=['GET'])
 def get_ranking():
     """Classement des opérateurs avec scores détaillés et tri personnalisable."""
-    sort_by = request.args.get('sort_by', 'quality') # quality, download, upload, ping
+    sort_by = request.args.get('sort_by', 'quality')
     quality_map = {'lent': 1, 'moyen': 2, 'rapide': 3}
 
     operators = {}
@@ -380,7 +310,7 @@ def get_ranking():
     # Vitesse moyennes (Download, Upload, Ping)
     metrics_rows = (
         db.session.query(
-            Submission.operator, 
+            Submission.operator,
             func.avg(Submission.speed_mbps),
             func.avg(Submission.upload_mbps),
             func.avg(Submission.ping_ms)
@@ -400,9 +330,8 @@ def get_ranking():
     elif sort_by == 'upload':
         ranking = sorted(operators.values(), key=lambda x: x['avg_upload'], reverse=True)
     elif sort_by == 'ping':
-        # Pour le ping, le plus bas est le mieux
         ranking = sorted(operators.values(), key=lambda x: x['avg_ping'] if x['avg_ping'] > 0 else float('inf'))
-    else: # quality
+    else:
         ranking = sorted(operators.values(), key=lambda x: x['quality_score'], reverse=True)
 
     # Ajouter le rang
