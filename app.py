@@ -39,12 +39,10 @@ with app.app_context():
         print(f"❌ Erreur lors de l'initialisation de la base : {e}")
 
 
-# ──────────────────────────── Pages ────────────────────────────
-
 @app.route('/')
 def index():
-    """Page principale avec speedtest intégré."""
-    return render_template('speedtest.html')
+    """Page d'accueil avec le speedtest."""
+    return render_template('index.html')
 
 
 @app.route('/dashboard')
